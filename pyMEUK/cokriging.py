@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
 """
 Created on Wed Sep 14 15:19:06 2022
 
@@ -9,7 +8,7 @@ import sys
 import numpy as np
 import pandas as pd
 # from scipy.linalg import solve_triangular, pinv
-from scipy.spatial.distance import squareform
+from collections.abc import Callable
 
 from .common import cdist, pdist, euclidean_dist, weight_correcting, get_nearest, auto_cov, cross_cov, solve_linear
 # from .variogram import vgm
@@ -37,31 +36,31 @@ def calc_kriging_factors(
 #%%
 # class cokriging(krige):
 #     def __ini__(self,)
+# """#ck5
+# """
 def ck5(
-    obsloc: np.array,
-    obsval: np.array,
-    newloc: np.array,
-    cov: callable|list,                 # convariance function or list of convariance function
-    obsdrift: np.array=None,
-    newdrift: np.array=None,
-    obstime: np.array=None,
-    newtime: np.array=None,
-    obsloc1: np.array|list=None,        # list of secondary variable location
-    obsval1: np.array|list=None,        # list of secondary variable v
-    obstime1:np.array|list=None,        # list of secondary variable time
+    obsloc: np.ndarray,                   # observation locations for primary variable
+    obsval: np.ndarray,                   # observation values for primary variable
+    newloc: np.ndarray,                   # new locations for primary variable
+    cov: Callable|list=None,              # convariance function or list of convariance function
+    obsdrift: np.ndarray=None,
+    newdrift: np.ndarray=None,
+    obstime: np.ndarray=None,
+    newtime: np.ndarray=None,
+    obsloc1: np.ndarray|list=None,        # list of secondary variable location
+    obsval1: np.ndarray|list=None,        # list of secondary variable v
+    obstime1:np.ndarray|list=None,        # list of secondary variable time
     unbias: bool=True,
     nmax :int|list=None,
     nmin :int=None,
     maxdist: float=None,
-    distfunc: callable=None,
-    tlag2slag: callable=None,
+    distfunc: Callable=None,
+    tlag2slag: Callable=None,
     solver:str='solve',
     weight_correction=False,
     write_mats: bool=False,
     standardized=True,
     validation=False,
-    return_factor: bool=False,
-    return_variance: bool=False,
     verbose: bool=False,
 ):
 
@@ -123,12 +122,7 @@ def ck5(
     elif isinstance(nmin, int):
         nmin = [nmin, ]
     nmin = np.array(nmin)
-
     assert all(nmin < nmax), f'All nmin({nmin}) must be smaller than nmax({nmax}).'
-
-    solv_all = np.zeros(nnew, )
-    if return_variance:
-        variance = np.zeros(nnew, )
 
     ndrift = 0
     if hasdrift:
@@ -139,7 +133,7 @@ def ck5(
     #############################################################################
     ####################### search for local data points  #######################
     #############################################################################
-    slags, tlags, totallags, nearests, ifactor = ([],)*5
+    slags, tlags, totallags, nearests, ifactor = [],[],[],[],[]
     search = False
     for ivar in range(nvar):
         localsearch, slag, tlag, totallag, iuseful, nearest = get_nearest(
@@ -151,14 +145,14 @@ def ck5(
             tlag2slag,
             obstime,
             newtime)
-        nuseful = len(iuseful)
+
         ifactor.append(nearest) # the index in the original full observation data
         # check if number of obs is smaller than nmin
-        if any((nfactor:=np.sum(nearest>=0, axis=0))<nmin[ivar]):
+        if localsearch and any((nfactor:=np.sum(nearest>=0, axis=0))<nmin[ivar]):
             toolittle = np.nonzero(nfactor<nmin[ivar])[0][:10]
             raise ValueError(f'Not enough observations near these locations (index) for variable {ivar+1}:\n  ' + ','.join(toolittle.astype(str)))
 
-        # if localsearch and nuseful < nobs[ivar]:
+        # if localsearch and (nuseful:=len(iuseful)) < nobs[ivar]:
         #     # remove the unused observations
         #     obslocs[ivar] = obslocs[ivar][iuseful]
         #     obsvals[ivar] = obsvals[ivar][iuseful]
@@ -180,7 +174,8 @@ def ck5(
         tlags.append(tlag)
         totallags.append(totallag)
         nearests.append(nearest)
-        nobs_full = nobs.sum()
+        nobs_full = sum(nobs)
+
 
     #############################################################################
     #######################  calculate covariance matrix  #######################
@@ -207,7 +202,6 @@ def ck5(
         rows.append(columns)
         rhss.append(
             cross_cov(covfunc=covfunc,
-                      distfunc=distfunc,
                       slag=slags[ivar],
                       tlag=tlags[ivar])
         )
@@ -222,7 +216,7 @@ def ck5(
 
     # right hand side covariance (obs ~ grid)
     matRHS = np.zeros([matsize, nnew])
-    matRHS[:matsize] = np.vstack(rhss)
+    matRHS[:nobs_full] = np.vstack(rhss)
 
     # unbias
     if unbias:
@@ -285,15 +279,13 @@ def ck5(
                  solver, validation, weight_correction)
 
     if write_mats:
-        np.savetxt('predict.dat', predict.reshape([nnew, -1]), fmt='%.9g')
-        np.savetxt('weights.dat', weights.T, fmt='%.9g')
+        np.savetxt('predict.dat',  predict.reshape([nnew, -1]), fmt='%.9g', delimiter=',')
+        np.savetxt('variance.dat', variance.reshape([nnew, -1]), fmt='%.9g', delimiter=',')
+        np.savetxt('weights.dat',  weights.T, fmt='%.9g', delimiter=',')
+        np.savetxt('matLHS.dat',   matLHS, fmt='%.9g', delimiter=',')
+        np.savetxt('matRHS.dat',   matRHS, fmt='%.9g', delimiter=',')
 
-    if return_factor:
-        # make the factor stored by new locations
-        solv_all = factor_all
-    if return_variance:
-        solv_all = (solv_all, variance)
-    return solv_all
+    return predict, variance, weights, predict_obs
 #%%
 if __name__ == '__main__':
 

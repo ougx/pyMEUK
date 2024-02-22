@@ -81,7 +81,7 @@ def cross_dist(locs0, locs1, distfunc, times0=None, times1=None, tlag2slag=None)
         tlag = np.array([np.abs(cc - times1) for ic, cc in enumerate(times0)])
         totallag = np.sqrt(slag ** 2 + tlag2slag(tlag) ** 2)
     else:
-        tlags = None
+        tlag = None
         totallag = slag
     return slag, tlag, totallag
 
@@ -154,7 +154,7 @@ def auto_cov(obsloc, covfunc, distfunc, obstime=None):
         matcov[ic+1:, ic] = matcov[ic,ic+1:]
     return matcov
 
-def cross_cov(obsloc0=None, obsloc1=None, covfunc=None, distfunc=None, obstime0=None, obstime1=None, slags=None, tlags=None):
+def cross_cov(obsloc0=None, obsloc1=None, covfunc=None, distfunc=None, obstime0=None, obstime1=None, slag=None, tlag=None):
     if slag is None:
         nobs0 = len(obsloc0)
         nobs1 = len(obsloc1)
@@ -169,14 +169,10 @@ def cross_cov(obsloc0=None, obsloc1=None, covfunc=None, distfunc=None, obstime0=
             else:
                 matcov[ic] = covfunc(slag)
     else:
-        hastime = tlag is not None
-        for ic, oc in enumerate(obsloc0):
-            slag = distfunc(oc.reshape([1, -1]), obsloc1)
-            if hastime:
-                tlag = np.abs(obstime0[ic] - obstime1)
-                matcov[ic] = covfunc(slag, tlag)
-            else:
-                matcov[ic] = covfunc(slag)
+        if tlag is None:
+            matcov = covfunc(slag)
+        else:
+            matcov = covfunc(slag, tlag)
 
     return matcov
 
