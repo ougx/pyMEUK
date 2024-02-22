@@ -1,0 +1,2 @@
+TINY = 1e-20
+VERYSMALL = 1e-10
